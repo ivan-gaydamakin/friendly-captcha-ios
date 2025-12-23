@@ -9,7 +9,7 @@ import UIKit
 @preconcurrency import WebKit
 import Foundation
 
-let VERSION = "1.0.2"
+let VERSION = "1.0.3"
 
 /// A class for interacting with the Friendly Captcha widget.
 ///

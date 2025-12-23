@@ -8,7 +8,7 @@
 
 Pod::Spec.new do |s|
   s.name             = 'FriendlyCaptcha'
-  s.version          = '1.0.2'
+  s.version          = '1.0.3'
   s.summary          = 'An iOS SDK for FriendlyCaptcha, a privacy-first bot protection service.'
 
   s.description      = <<-DESC
