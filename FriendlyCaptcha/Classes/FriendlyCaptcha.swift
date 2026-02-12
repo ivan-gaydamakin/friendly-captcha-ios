@@ -11,6 +11,23 @@ import Foundation
 
 let VERSION = "1.0.3"
 
+@objc
+public class FriendlyCaptchaParseError: NSObject, Error {
+    
+    public enum TypeError: Error {
+        case cantDecodeJSON
+        case notFoundTypeMessage
+    }
+
+    public let type: TypeError
+    public let message: String
+
+    init(type: TypeError, message: String) {
+        self.type = type
+        self.message = message
+    }
+}
+
 /// A class for interacting with the Friendly Captcha widget.
 ///
 /// This class is the main entry point for the Friendly Captcha SDK. Each instance provides and manages a UIViewController containing a
@@ -174,6 +191,11 @@ public class FriendlyCaptcha: NSObject {
         viewController.handleError = handler
     }
 
+    @objc
+    public func overrideParseError(_ handler: @escaping (FriendlyCaptchaParseError) -> Void) {
+        viewController.overrideParseError = handler
+    }
+
     /// Set a callback function to be invoked when the widget expires.
     ///
     /// The user will be able to click the widget to try again. This might happen if the user waits
@@ -264,6 +286,7 @@ public class FriendlyCaptcha: NSObject {
         viewController.handleError = { _ in }
         viewController.handleExpire = { _ in }
         viewController.handleStateChange = { _ in }
+        viewController.overrideParseError = nil
 
         viewController.destroy()
     }
@@ -279,6 +302,7 @@ class WidgetViewController: UIViewController, WKScriptMessageHandler, WKNavigati
     var handleError: (WidgetErrorEvent) -> Void = { _ in }
     var handleExpire: (WidgetExpireEvent) -> Void = { _ in }
     var handleStateChange: (WidgetStateChangeEvent) -> Void = { _ in }
+    var overrideParseError: ((FriendlyCaptchaParseError) -> Void)?
 
     private var webView: WKWebView!
 
@@ -320,18 +344,19 @@ class WidgetViewController: UIViewController, WKScriptMessageHandler, WKNavigati
            let jsonData = try? JSONSerialization.data(withJSONObject: body["data"] as Any) {
             switch type {
             case "complete":
-                let message = try! JSONDecoder().decode(WidgetCompleteEvent.self, from: jsonData)
+                guard let message = parseJson(WidgetCompleteEvent.self, from: jsonData) else { return }
                 handleComplete(message)
             case "error":
-                let message = try! JSONDecoder().decode(WidgetErrorEvent.self, from: jsonData)
+                guard let message = parseJson(WidgetErrorEvent.self, from: jsonData) else { return }
                 handleError(message)
             case "expire":
-                let message = try! JSONDecoder().decode(WidgetExpireEvent.self, from: jsonData)
+                guard let message = parseJson(WidgetExpireEvent.self, from: jsonData) else { return }
                 handleExpire(message)
             case "statechange":
-                let message = try! JSONDecoder().decode(WidgetStateChangeEvent.self, from: jsonData)
+                guard let message = parseJson(WidgetStateChangeEvent.self, from: jsonData) else { return }
                 handleStateChange(message)
             default:
+                overrideParseError?(.init(type: .notFoundTypeMessage, message: "Unknown message type: \(body)"))
                 print("Unknown message type", body)
             }
         }
@@ -392,5 +417,18 @@ class WidgetViewController: UIViewController, WKScriptMessageHandler, WKNavigati
         webView.removeFromSuperview()
         webView = nil
         view = nil
+    }
+    
+    private func parseJson<T>(_ type: T.Type, from data: Data) -> T? where T : Decodable {
+        if let overrideParseError {
+            do {
+                return try JSONDecoder().decode(type.self, from: data)
+            } catch {
+                overrideParseError(.init(type: .cantDecodeJSON, message: "Failed to decode JSON: \(error)"))
+                return nil
+            }
+        } else {
+            return try! JSONDecoder().decode(type.self, from: data)
+        }
     }
 }
